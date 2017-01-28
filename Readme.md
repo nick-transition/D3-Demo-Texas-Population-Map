@@ -7,6 +7,7 @@ Following along with Mike Bostock's 4 part blog series [Command-Line Cartography
 - [D3 Geo Projection](https://github.com/d3/d3-geo-projection)
 - [ndjson-cli](https://github.com/mbostock/ndjson-cli)
 - [D3](https://github.com/d3/d3)
+- [TopoJSON](https://github.com/topojson/topojson/blob/master/README.md#api-reference)
 ```bash
 npm install -g shapefile
 npm install -g d3-geo-projection
@@ -32,9 +33,9 @@ curl "http://api.census.gov/data/2014/acs5?get=B01003_001E&for=tract:*&in=state:
 ```
 Note: I created a .env file for storing my Census API Key as an environment variable.
 
-
+#Part 1
 ## Data Manipulation
-Convert shapefile to GeoJson
+Convert shapefile to GeoJson using [Mike Bostock's shapefile parser](https://github.com/mbostock/shapefile) with a command-line interface, [shp2json](https://github.com/mbostock/shapefile/blob/master/README.md#shp2json).
 ```bash
 shp2json cb_2014_48_tract_500k.shp -o tx.json
 ```
@@ -50,7 +51,9 @@ Convert projection into SVG
 ``` bash
 geo2svg -w 960 -h 960 < tx-north.json > tx-north.svg
 ```
-# Create Feature Stream of GeoJSON
+# Part II
+
+## Create Feature Stream of GeoJSON
 GeoJSON is a huge collection of features which we need to access a feature at a time — enter [ndjson-split](https://github.com/mbostock/ndjson-cli/blob/master/README.md#split):
 ```bash
 ndjson-split 'd.features' \
@@ -121,5 +124,50 @@ ndjson-map -r d3 \
 geo2svg -n --stroke none -p 1 -w 960 -h 960 \
   < tx-north-color.ndjson \
   > tx-north-color.svg
-
 ```
+# Part III
+
+Next we will 1.) Simplify 2.) Quantize and 3.) Compress our GeoJSON.
+
+I highly recommend reading [Part III of Mike Bostock's Blog post](https://medium.com/@mbostock/command-line-cartography-part-3-1158e4c55a1e#.4o4lpsif0).
+
+## Convert GeoJSON to TopoJson
+```bash
+geo2topo -n \
+  tracts=tx-north-density.ndjson \
+  > tx-north-topo.json
+```
+
+## Further reduce TopoJson
+Use [toposimplify](https://github.com/topojson/topojson-simplify/blob/master/README.md#toposimplify) to further shrink our file.
+```bash
+toposimplify -p 1 -f \
+  < tx-north-topo.json \
+  > tx-simple-topo.json
+```
+## Topoquantize
+Reduce floats to integers
+
+```bash
+topoquantize 1e5 \
+  < tx-simple-topo.json \
+  > tx-quantized-topo.json
+```
+
+## Merge tracts within county
+Since census tracts compose hierarchically into counties, we can derive county geometry using topomerge!
+
+```bash
+topomerge -k 'd.id.slice(0, 3)' counties=tracts \
+  < tx-quantized-topo.json \
+  > tx-merge-topo.json
+```
+
+## Remove exterior county borders
+
+``` bash
+topomerge --mesh -f 'a !== b' counties=counties \
+  < tx-merge-topo.json \
+  > tx-topo.json
+  ```
+# Part IV
